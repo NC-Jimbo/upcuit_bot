@@ -12,20 +12,29 @@ RECENT_MINUTES = 25          # 여유롭게 25분
 seen_halts = set()
 
 def is_recent(halt_time_str: str) -> bool:
-    """upcuit 시간(미국 시간)을 UTC로 변환해서 최근인지 체크"""
+    """upcuit 시간을 더 안전하게 파싱 + KST 기준으로 최근 25분 체크"""
     try:
         # upcuit 시간 형식: "Apr 28, 01:25:43"
         halt_time = datetime.strptime(halt_time_str, "%b %d, %H:%M:%S")
         halt_time = halt_time.replace(year=datetime.now().year)
         
-        # upcuit은 미국 서부 시간(PDT)일 가능성이 높음 → UTC로 변환
-        halt_time = halt_time.replace(tzinfo=timezone(timedelta(hours=-7)))  # PDT = UTC-7
+        # 미국 서부 시간(PDT)으로 가정
+        halt_time = halt_time.replace(tzinfo=timezone(timedelta(hours=-7)))
         
-        now = datetime.now(timezone.utc)
-        delta = now - halt_time
+        # 한국 시간(KST)으로 변환해서 비교
+        kst = timezone(timedelta(hours=9))
+        halt_kst = halt_time.astimezone(kst)
+        now_kst = datetime.now(kst)
         
-        return timedelta(minutes=0) <= delta <= timedelta(minutes=RECENT_MINUTES)
-    except:
+        delta = now_kst - halt_kst
+        
+        is_ok = timedelta(minutes=0) <= delta <= timedelta(minutes=RECENT_MINUTES)
+        
+        print(f"DEBUG: {halt_time_str} → KST {halt_kst.time()} | 차이 {delta.seconds//60}분")
+        return is_ok
+        
+    except Exception as e:
+        print(f"시간 파싱 실패: {halt_time_str} | {e}")
         return False
 
 def send_discord_alert(halt):

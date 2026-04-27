@@ -11,6 +11,24 @@ RECENT_MINUTES = 25
 
 seen_halts = set()
 
+# ================== 장 시간 체크 함수 ==================
+def is_market_open() -> bool:
+    """한국 시간 기준으로 미국 정규장(EDT)인지 확인"""
+    now_kst = datetime.now(timezone(timedelta(hours=9)))
+    weekday = now_kst.weekday()  # 0=월요일 ~ 6=일요일
+    hour = now_kst.hour
+    minute = now_kst.minute
+
+    # 주말 제외
+    if weekday >= 5:  # 토요일, 일요일
+        return False
+
+    # 미국 정규장 시간 (현재 DST 기간: KST 기준 22:30 ~ 05:00)
+    # 22:30 ~ 24:00 또는 00:00 ~ 05:00
+    if (hour == 22 and minute >= 30) or (hour >= 23) or (0 <= hour <= 4) or (hour == 5 and minute <= 0):
+        return True
+    return False
+
 def is_recent(halt_time_str: str) -> bool:
     """시간 파싱 개선 + DeprecationWarning 제거"""
     try:
@@ -88,5 +106,24 @@ print("🚀 upcuit 킷봇 최종 버전 실행 중")
 print(f"→ 최근 {RECENT_MINUTES}분 이내 알람 + DeprecationWarning 제거")
 
 while True:
+    now = datetime.now(timezone(timedelta(hours=9)))   # 한국 시간
+    hour = now.hour
+    weekday = now.weekday()
+
+    # 미국 정규장 시간 (한국 시간 기준, DST 적용)
+    is_regular_market = (
+        weekday < 5 and                                      # 주말 제외
+        ((hour == 22 and now.minute >= 30) or                # 22:30 ~
+         (23 <= hour <= 23) or 
+         (0 <= hour <= 4) or 
+         (hour == 5 and now.minute <= 0))                     # ~ 05:00
+    )
+
+    if not is_regular_market:
+        print(f"📴 [{now.strftime('%m-%d %H:%M')}] 미국 장 마감 / 주말입니다. 1시간 후 다시 체크...")
+        time.sleep(3600)          # ← 1시간 동안 완전 sleep (CPU 거의 안 씀)
+        continue
+
+    # 정규장일 때만 실행
     check_upcuit()
     time.sleep(CHECK_INTERVAL)

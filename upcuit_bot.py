@@ -81,26 +81,46 @@ def check_upcuit():
             if len(cols) < 4:
                 continue
                 
-            full_text = cols[0].text.strip()
-            symbol = full_text.split()[0]
-            name = " ".join(full_text.split()[1:])
-            reason = cols[2].text.strip()
-            halt_time = cols[3].text.strip()
+            # --- 1. 티커와 종목명 분리 로직 강화 ---
+            # 첫 번째 칸(cols[0])에서 텍스트를 가져와 공백으로 나눕니다.
+            raw_text = cols[0].get_text(separator=" ", strip=True).split()
             
-            key = f"{symbol}_{halt_time}"
+            if not raw_text:
+                continue
+
+            symbol = raw_text[0].upper()  # 첫 단어는 무조건 티커 (대문자 변환)
+            name = " ".join(raw_text[1:]) # 나머지는 모두 종목명
             
-            if key not in seen_halts and is_recent(halt_time):
-                seen_halts.add(key)
-                halt_data = {
-                    "symbol": symbol,
-                    "name": name,
-                    "reason": reason,
-                    "time": halt_time
-                }
-                send_discord_alert(halt_data)
+            # 만약 종목명이 비어있다면 "N/A" 처리
+            if not name:
+                name = "-"
+
+            reason = cols[2].get_text(strip=True)
+            halt_time = cols[3].get_text(strip=True)
+            
+            # --- 2. 중복 방지 키 생성 (공백 제거) ---
+            # 시간과 티커를 조합해 고유 키 생성
+            key = f"{symbol}_{halt_time}".replace(" ", "")
+            
+            if key not in seen_halts:
+                # 최근 발생한 알람인지 확인
+                if is_recent(halt_time):
+                    # 중요: 알람 전송 전 세트에 먼저 추가해서 중복 진입 차단
+                    seen_halts.add(key)
+                    
+                    halt_data = {
+                        "symbol": symbol,
+                        "name": name,
+                        "reason": reason,
+                        "time": halt_time
+                    }
+                    send_discord_alert(halt_data)
+                else:
+                    # 너무 오래된 기록이면 세트에만 넣고 무시
+                    seen_halts.add(key)
                 
     except Exception as e:
-        print(f"❌ 오류: {e}")
+        print(f"❌ 오류 발생: {e}")
 
 print("🚀 upcuit 킷봇 최종 버전 실행 중")
 print(f"→ 최근 {RECENT_MINUTES}분 이내 알람 + DeprecationWarning 제거")

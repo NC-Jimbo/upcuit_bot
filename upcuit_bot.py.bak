@@ -1,0 +1,82 @@
+import requests
+import time
+from bs4 import BeautifulSoup
+from datetime import datetime, timedelta, timezone
+
+WEBHOOK_URL = "https://discord.com/api/webhooks/1498362102904131594/P-9Xf0rfRswxTLO80sCdOULQUjofAzRwYDJi5MbW0z_hpUxV-2GRbpjKSuIvSQLCWAXM"
+CHECK_INTERVAL = 15
+
+seen_halts = set()
+
+def is_market_open() -> bool:
+    now = datetime.now(timezone(timedelta(hours=9)))
+    if now.weekday() >= 5:
+        return False
+    h, m = now.hour, now.minute
+    return (h == 22 and m >= 30) or (23 <= h) or (0 <= h <= 5)
+
+def send_alert(halt):
+    embed = {
+        "title": "🚨 새로운 킷 감지! 🚨",
+        "color": 0xff0000,
+        "fields": [
+            {"name": "📌 티커", "value": f"**{halt['symbol']}**", "inline": True},
+            {"name": "🏷 종목명", "value": halt.get('name', '-'), "inline": True},
+            {"name": "⚠️ 사유", "value": halt['reason'], "inline": False},
+            {"name": "⏰ 정지시간", "value": halt['time'], "inline": True},
+        ],
+        "footer": {"text": "upcuit.com • 실시간"},
+        "timestamp": datetime.now(timezone(timedelta(hours=9))).isoformat()
+    }
+    try:
+        requests.post(WEBHOOK_URL, json={"username": "upcuit 킷봇", "embeds": [embed]}, timeout=10)
+        print(f"✅ 전송 성공 → {halt['symbol']}")
+    except:
+        print("❌ 웹훅 실패")
+
+def check_upcuit():
+    try:
+        r = requests.get("https://upcuit.com/", 
+                        headers={"User-Agent": "Mozilla/5.0"}, 
+                        timeout=15)
+        soup = BeautifulSoup(r.text, "html.parser")
+        
+        new_count = 0
+        for row in soup.select("table tbody tr"):
+            cols = row.find_all("td")
+            if len(cols) < 4: continue
+
+            raw = cols[0].get_text(separator=" ", strip=True).split()
+            if not raw: continue
+                
+            symbol = raw[0].upper()
+            name = " ".join(raw[1:]) if len(raw) > 1 else "-"
+            reason = cols[2].get_text(strip=True)
+            halt_time = cols[3].get_text(strip=True)
+
+            key = f"{symbol}_{halt_time}".replace(" ", "")
+
+            if key not in seen_halts:
+                seen_halts.add(key)
+                send_alert({"symbol": symbol, "name": name, "reason": reason, "time": halt_time})
+                new_count += 1
+        
+        if new_count == 0:
+            print("   📭 새로 발견된 킷 없음")
+        else:
+            print(f"   🔥 {new_count}개 킷 전송 완료")
+            
+    except Exception as e:
+        print(f"❌ 크롤링 오류: {e}")
+
+
+print("🚀 upcuit 킷봇 - 필터링 OFF 버전 실행 중")
+
+while True:
+    if is_market_open():
+        print(f"🟢 [{datetime.now(timezone(timedelta(hours=9))).strftime('%m-%d %H:%M:%S')}] 체크 중...")
+        check_upcuit()
+        time.sleep(CHECK_INTERVAL)
+    else:
+        print(f"📴 장 마감 - 1시간 대기")
+        time.sleep(3600)
